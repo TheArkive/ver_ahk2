@@ -1,51 +1,39 @@
 ; ===============================================================
-; Example
+; Example - copy AutoHotkey.exe into the script folder
+;
+;   WARNING:  If you set [ sFile := "AutoHotkey64.exe" ] then this
+;             will match the EXE that is running the script.
+;             You really don't want to do that.
 ; ===============================================================
 
-; msg := "*** WARNING ***`n"
-     ; . "When you try this, make a COPY of AutoHotkey.exe!!!`n"
-     ; . "I suggest you don't try this on the original.`n`n"
-     ; . "Do you want to continue?"
-
-; If Msgbox(msg,,4) = "No"
-    ; ExitApp
-
-; sFile := FileSelect("1",A_ScriptDir)
-; If !sFile
-    ; ExitApp
-
-; vi := ver(sFile) ; specify only a file to get an automatic list of Version resources
+; sFile := A_ScriptDir "\AutoHotkey64.exe" ; change this as needed
+; vi := Ver(sFile) ; automatically lists available version resources + lang
 
 ; list := ""
-; For i, obj in vi.ResList ; version resource names are usually numbers
-    ; list .= (list?"`n":"") obj[1] " / " obj[2]
+; For i, obj in vi.names
+    ; list .= (list?"`n":"") "Name: " obj.name " / Lang: " obj.lang
+; msgbox list
 
-; msgbox "Version Resource List (Name / Lang):`n`n" list
+; vi.Load(1) ; This is done automatically on creation if you specify the "name" parameter on vi creation.
 
-; vi := ver(sFile,1) ; Now recreating the obj, and specifying Resource #1 on creation.  Usually the version resource name is 1.
-
-;;;;;;; To use this, uncomment ReadBuffer() func at the bottom
-;;;;;;; msgbox ReadBuffer(vi,vi.OrigObj.ptr) ; for debugging ; check original object
-
-; arr := vi.ListValues()
+; arr := vi.ListKeys()
 ; list := ""
 ; For i, obj in arr
     ; list .= (list?"`n":"") obj.key " = " obj.Value
 ; msgbox "List all StringTable properties:`n`n" list
 
-; msgbox "Reading file version data:`n`n"
+; msg := "Reading file version data:`n`n"
      ; . "File Desc:`t" vi.FileDescription "`n" ; read data as properties
      ; . "File Ver:`t`t" vi.FileVersion
+; msgbox msg
 
-; vi.FileDescription("New File Description")
-; vi.FileVersion("1.2.3.4") ; write data as methods
+; vi.FileDescription("New File Description") ; write data as methods
+; vi.FileVersion("2.4.6.8")
 ; vi.ProductName("My Product Name")
 ; vi.ProductVersion("4.3.2.1")
 ; vi.Comments("test comment")
 
 ; vi.Apply() ; apply changes and construct buffer
-;;;;;;; To use this, uncomment ReadBuffer() func at the bottom
-;;;;;;; msgbox ReadBuffer(vi,vi.outObj.ptr) ; for debugging ; check output buffer before update
 
 ; vi.BeginUpdate()
 ; vi.Save()
@@ -72,7 +60,8 @@
 ;       vi := ver(file_name [ , resource_name := ""] )
 ;
 ;       If you specify a resource name, that resource is automatically loaded and
-;       parsed.  If not, then you get a list of Version resources.
+;       parsed as if you used the vi.Load() method.  If not, then the vi.List()
+;       method is automatically executed.  Read more below.
 ;
 ;   Get property data:
 ;       vi.prop_name
@@ -88,17 +77,20 @@
 ;
 ;   Properties:
 ;
-;       vi.ResList  = Array of Version resource names.  Each element in the array
-;                     is an array with 2 members:
-;                       arr[1] = resource name
-;                       arr[2] = resource language (ie. 1033 for English)
+;       vi.names  = Array of Version resource names.  Each element in the array
+;                   is an object with 2 members:
 ;
-;       vi.cp       = The codepage value.  You can change this if needed.
+;                       obj.name = resource name
+;                       obj.lang = resource language (ie. 1033 for English)
 ;
-;       vi.lang     = The language value.  You can change this if needed.
+;       vi.cp       = The codepage value.  You can change this as desired.
+;
+;       vi.lang     = The language value.  You can change this as desired.
+;
 ;           * See codepage and lang values below.
-;           * When you use vi.Apply() method, these values will be referenced to
-;             construct the StringTable szKey and the Translation member value.
+;           * When you use vi.Apply() method, the "cp" and "lang" properties will
+;             be used to construct the StringTable szKey and the Translation
+;             member value.
 ;
 ;       vi.hUpdate  = The handle to the file for the update operation.
 ;                     This is mostly useful if doing other resource updates.
@@ -107,19 +99,17 @@
 ;
 ;   * These properties below may be useful for advanced purposes:
 ;
-;       vi.origObj  = The original version resource
-;       vi.outObj   = The obj used for output/writing new version resource.
-;       vi.oldLang  = This is used internally to remove the initial resource before
-;                     writing the new resource.  Referencing this property is not 
-;                     usually very helpful.
+;       vi.origObj  = The original version resource RAW data.
+;       vi.outObj   = The obj used for output/writing new version resource (also RAW).
+;
+;       vi.oldLang  = This is used internally to store the lang of the the initial
+;                     so it can be removed before writing the new resource.
 ;
 ;       vi.children / vi.StrTable = These are arrays of elements in the version
 ;                                   resource data.  You can parse these and edit
 ;                                   or inspect them manually if you wish.
 ;
-;                                   * Useful element properties:
-;
-;                                   szKey, value
+;                                   Useful StrTable properties: szKey, value
 ;
 ;                                   Ex:
 ;
@@ -138,7 +128,8 @@
 ;       List()
 ;       vi.List()   = Populates the vi.ResList property with an array of Version resource
 ;                     names.  If only a file is specified on creation of vi object, then
-;                     this list is automatically populated.
+;                     this list is automatically populated.  The result is stored into
+;                     the "names" property.  See the format for this property above.
 ;
 ;       Apply()
 ;       vi.Apply()  = Constructs the new version resource and saves it into vi.outObj
@@ -171,8 +162,8 @@
 ;                                          destroy / ignore / overwrite the class instance.
 ;
 ;
-;       ListValues()
-;       arr := vi.ListValues() = This loads all szKey's and the associated string table value.
+;       ListKeys()
+;       arr := vi.ListKeys()   = This loads all szKey's and the associated string table value.
 ;                                The output is an array.  Each element has the following
 ;                                properties:
 ;
@@ -180,28 +171,46 @@
 ;                                   obj.value
 ; ===============================================================
 class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
-    sFile := "", name := "", hUpdate := 0
-    children := [], strTable := [], outList := []
-    origObj := "", outObj := ""
-    EnumCb := {}
-    names := [], ResList := []
+    sFile := "", name := "", hUpdate := 0, EnumCb := {}
+    children := [], strTable := []
+    names := [], origObj := "", outObj := ""
     lang := "", cp := "", oldLang := ""
+    
     __New(sFile, name:="") {
-        this.sFile := sFile, this.name := name
-        
-        If IsInteger(name) && (name) {
-            this.Load(name)
-            this.Read(this.origObj.ptr)
-        } Else
-            this.List()
+        this.sFile := sFile
+        (name) ? this.Load(this.name := name) : this.List()
     }
-    EnumRes(hModule, sType, p*) { ; sName, [Lang,] lParam
+    EnumRes(List, hModule, sType, p*) { ; private, only used as a callback function
         name := (((sName:=p[1])>>16)=0) ? sName : StrGet(sName)
-        (p.Length = 2) ? this.names.Push(name) : this.ResList.Push( [name,p[2]] ) ; version resource [name, lang]
+        If (p.Length = 2)
+            List.Push(name)
+        Else
+            List.Push({name:name, lang:p[2]}) ; version resource {name, lang}
         return true
     }
+    List() {
+        If !(hModule := DllCall("LoadLibrary","Str",this.sFile, "UPtr"))
+            return false
+        
+        Loop (p:=2) {
+            this.EnumCb.fnc := ObjBindMethod(this,"EnumRes",List:=[])
+            this.EnumCb.ptr := CallbackCreate(this.EnumCb.fnc,"F",p+2)
+            
+            If (A_Index=1) {
+                r1 := DllCall("EnumResourceNames", "UPtr", hModule, "Ptr", 16, "UPtr", this.EnumCb.ptr, "UPtr", 0, "Int")
+                this.names := List
+            } Else {
+                For i, name in this.names
+                    DllCall("EnumResourceLanguagesEx", "UPtr", hModule, "Ptr", 16, "Ptr", name, "UPtr", this.EnumCb.ptr
+                                                     , "UPtr", 0, "UInt", 0x1, "UShort", 0)
+                this.names := List
+            }
+            p++, CallbackFree(this.EnumCb.ptr)
+        }
+        r1 := DllCall("FreeLibrary","UPtr",hModule)
+    }
     Load(name:=1) {
-        name := IsInteger(name) ? "#" name : name
+        name := IsInteger(this.name := name) ? "#" name : name
         hModule := DllCall("LoadLibraryEx","Str",(this.sFile), "UPtr", 0, "UInt", 0x2, "UPtr")
         fRsc := DllCall("FindResource","UPtr",hModule,"Str",name,"Ptr",16,"UPtr")
         hRsc := DllCall("LoadResource","UPtr",hModule,"UPtr",fRsc,"UPtr")   ; resource handle
@@ -210,31 +219,9 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
         this.origObj := Buffer(size := DllCall("SizeofResource","UPtr",hModule,"UPtr",fRsc,"UInt"))
         DllCall("RtlCopyMemory", "UPtr", this.origObj.ptr, "UPtr", ptr, "UPtr", size)
         r1 := DllCall("FreeLibrary","UPtr",hModule,"UPtr")
-    }
-    List() {
-        If !(hModule := DllCall("LoadLibrary","Str",this.sFile, "UPtr"))
-            return false
+        this.children := [], this.strTable := [], this.outList := [], this.outObj := "" ; reset vars
         
-        this.EnumCb.fnc := ObjBindMethod(this,"EnumRes")
-        
-        Loop (p:=2) {
-            this.EnumCb.ptr := CallbackCreate(this.EnumCb.fnc,"F",p+2)
-            
-            If (A_Index=1) {
-                r1 := DllCall("EnumResourceNames", "UPtr", hModule, "Ptr", 16, "UPtr", this.EnumCb.ptr, "UPtr", 0, "Int")
-            } Else {
-                For i, name in this.names
-                    DllCall("EnumResourceLanguagesEx", "UPtr", hModule, "Ptr", 16, "Ptr", name, "UPtr", this.EnumCb.ptr
-                                                     , "UPtr", 0, "UInt", 0x1, "UShort", 0)
-            }
-            p++, CallbackFree(this.EnumCb.ptr)
-        }
-        r1 := DllCall("FreeLibrary","UPtr",hModule)
-    }
-    Read(curAddr) { ; used internally
-        this.children := [], this.strTable := [], this.outList := [] ; reset lists
-        this.origObj := "", this.outObj := ""
-        limit := curAddr + NumGet(curAddr,"UShort")
+        limit := (curAddr := this.origObj.ptr) + NumGet(curAddr,"UShort")
         
         While (curAddr < limit) {
             obj := {wLength:NumGet(curAddr,"UShort")
@@ -259,20 +246,20 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
         this.children.Push(this.strTable.RemoveAt(this.strTable.Length)) ; move last two elements to this.children
         this.children.InsertAt(this.children.Length, this.strTable.RemoveAt(this.strTable.Length))
     }
-    ListValues() {
+    ListKeys() {
         list := []
         For i, obj in this.StrTable
             list.Push({key:obj.szKey, value:obj.value})
         return list
     }
-    __Get(prop, p) {
+    __Get(prop, p) { ; private
         found := false, o := ""
         For i, obj in this.strTable
             If (found := (prop = obj.szKey) && (o := obj))
                 Break
         return found ? o.value : ""
     }
-    __Call(prop, p) {
+    __Call(prop, p) { ; private
         found := false, o := "", value := p[1]
         For i, obj in this.strTable
             If (found := (prop = obj.szKey) && (item := i))
@@ -298,12 +285,13 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
         
         NumPut("UInt", ((("0x" this.cp)<<16) | ("0x" this.lang)), o[5].value) ; Write Translation value
         
+        outList := []
         Loop 3 ; re-order elements into one array (this.outList)
-            this.outList.Push(o[A_Index])
+            outList.Push(o[A_Index])
         For i, obj in this.strTable
-            this.outList.Push(obj)
+            outList.Push(obj)
         Loop 2
-            this.outList.Push(o[A_Index+3])
+            outList.Push(o[A_Index+3])
         
         fvArr := StrSplit(this.FileVersion,"."), pvArr := StrSplit(this.ProductVersion,".") ; update VS_FIXEDFILEINFO
         NumPut("UInt", (fvArr.Has(1)?fvArr[1]<<16:0) | (fvArr.Has(2)?fvArr[2]:0), (obj := o[1].value), 8)
@@ -311,9 +299,9 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
         NumPut("UInt", (pvArr.Has(1)?pvArr[1]<<16:0) | (pvArr.Has(2)?pvArr[2]:0), obj, 16)
         NumPut("UInt", (pvArr.Has(3)?pvArr[3]<<16:0) | (pvArr.Has(4)?pvArr[4]:0), obj, 20)
         
-        curAddr := (buf := Buffer(this.outList[1].wLength)).ptr
+        curAddr := (buf := Buffer(outList[1].wLength)).ptr
         
-        For i, obj in this.outList {
+        For i, obj in outList {
             NumPut("UShort",obj.wLength,curAddr)
             NumPut("UShort",valLen := obj.wValLen,curAddr,2)
             NumPut("UShort",wType := obj.wType,curAddr,4)
