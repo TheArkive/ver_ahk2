@@ -16,6 +16,8 @@
 
 ; vi.Load(1) ; This is done automatically on creation if you specify the "name" parameter on vi creation.
 
+; msgbox "lang: " vi.lang " / cp: " vi.cp
+
 ; arr := vi.ListKeys()
 ; list := ""
 ; For i, obj in arr
@@ -27,20 +29,35 @@
      ; . "File Ver:`t`t" vi.FileVersion
 ; msgbox msg
 
-; vi.FileDescription("New File Description") ; write data as methods
-; vi.FileVersion("2.4.6.8")
-; vi.ProductName("My Product Name")
+; vi.FileDescription("New File Description")  ; Write data as methods.
+; vi.FileVersion("2.4.6.8")                   ; See full list of "common" fields
+; vi.ProductName("My Product Name")           ; near the bottom of this document.
 ; vi.ProductVersion("4.3.2.1")
-; vi.Comments("test comment")
+; vi.OriginalFilename("test.exe")
+; vi.LegalCopyright("copyright data")
+; vi.Comments("what do comments look like?")
 
-; vi.Apply() ; apply changes and construct buffer
+; vi.Apply(1,0x409) ; remove specified lang
 
 ; vi.BeginUpdate()
 ; vi.Save()
 ; result := vi.EndUpdate()
 ; msgbox "Success:`t" (result?"true":"false") " / Last Error: " A_LastError "`n`n"
-     ; . "Check the file properties now!"
+     ; . "Check the file properties now.  No version info."
 
+; vi.Apply(1,"",0x409)    ; Add specified lang to file that has no version resource ...
+; vi.BeginUpdate()        ; ... to replace a lang, param 2 and 3 in .Apply() must be the same ...
+; vi.Save()               ; ... otherwise you can also remove one lang, and add ver info as another lang.
+; vi.EndUpdate()
+; msgbox "Success:`t" (result?"true":"false") " / Last Error: " A_LastError "`n`n"
+     ; . "The string table fields will be displayed next!"
+
+; vi.Load(1)  ; reload data
+; arr := vi.ListKeys() ; relist data
+; list := ""
+; For i, obj in arr
+    ; list .= (list?"`n":"") obj.key " = " obj.Value
+; msgbox "List all StringTable properties:`n`n" list
 ; ===============================================================
 ; NOTE:  I plan to make a suite of these resource classes meant
 ; to be used with each other for performing resource udpates.
@@ -83,9 +100,14 @@
 ;                       obj.name = resource name
 ;                       obj.lang = resource language (ie. 1033 for English)
 ;
-;       vi.cp       = The codepage value.  You can change this as desired.
+;       vi.cp       = The codepage value.  You can change this as desired, or
+;                     specify this value when using the Apply() method.
 ;
-;       vi.lang     = The language value.  You can change this as desired.
+;       vi.lang     = The language value.  You can change this as desired, but
+;                     you must still specify a lang value when using the Apply()
+;                     method.  When you use the Load() method, this value is
+;                     automatically populated as the current lang of the existing
+;                     version resource.
 ;
 ;           * See codepage and lang values below.
 ;           * When you use vi.Apply() method, the "cp" and "lang" properties will
@@ -103,7 +125,9 @@
 ;       vi.outObj   = The obj used for output/writing new version resource (also RAW).
 ;
 ;       vi.oldLang  = This is used internally to store the lang of the the initial
-;                     so it can be removed before writing the new resource.
+;                     so it can be removed before writing the new resource.  When you
+;                     use the Load() method, this value is automatically populated as
+;                     the current lang of the existing version resource.
 ;
 ;       vi.children / vi.StrTable = These are arrays of elements in the version
 ;                                   resource data.  You can parse these and edit
@@ -125,14 +149,36 @@
 ;       vi.Load(1)  = Loads the specified Version resource name.  If no name is specified
 ;                     then it defaults to Version resource 1.
 ;
+;                     The "oldLang" property is automatically populated.  You can use the
+;                     "oldLang" and "lang" properties with vi.Apply() if you wish:
+;
+;                       ie:    vi.Apply(1, vi.oldLang, vi.lang)
+;
 ;       List()
 ;       vi.List()   = Populates the vi.ResList property with an array of Version resource
 ;                     names.  If only a file is specified on creation of vi object, then
 ;                     this list is automatically populated.  The result is stored into
 ;                     the "names" property.  See the format for this property above.
 ;
-;       Apply()
+;                     The list that is stored in the "names" property is also used as
+;                     a return value.
+;
+;       Apply(name, oldLang, lang:="", cp:="")
 ;       vi.Apply()  = Constructs the new version resource and saves it into vi.outObj
+;
+;                     The version resource name to replace is "1" by default.
+;
+;                     If you want to replace a version resource, specify "oldLang" and "lang".
+;                     Both values must be the same.
+;
+;                     If you just want to remove a lang, specify "oldLang" and leave "lang"
+;                     blank.
+;
+;                     If you want to add a version resource to a file that has none,
+;                     specify oldLang as "" and specify the "lang" to add.
+;
+;                     If you want to remove a version resource, and add a new resource
+;                     as a different lang, then specify "oldLang" and "lang" accordingly.
 ;
 ;       BeginUpdate()
 ;       hUpdate := vi.BeginUpdate() = Preps the file for update. You don't need
@@ -178,7 +224,8 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
     
     __New(sFile, name:="") {
         this.sFile := sFile
-        (name) ? this.Load(this.name := name) : this.List()
+        this.List()
+        (name) ? this.Load(this.name := name) : ""
     }
     EnumRes(List, hModule, sType, p*) { ; private, only used as a callback function
         name := (((sName:=p[1])>>16)=0) ? sName : StrGet(sName)
@@ -208,6 +255,8 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
             p++, CallbackFree(this.EnumCb.ptr)
         }
         r1 := DllCall("FreeLibrary","UPtr",hModule)
+        
+        return this.names
     }
     Load(name:=1) {
         name := IsInteger(this.name := name) ? "#" name : name
@@ -236,8 +285,10 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
             Else If (valLen && wType)
                 obj.value := StrGet(curAddr)
             
-            If (A_Index=3)
-                (this.lang := this.oldLang := SubStr(szKey,1,4)), this.cp := SubStr(szKey,5)
+            If (A_Index=3) {
+                this.lang := this.oldLang := Format("{:u}","0x" SubStr(szKey,1,4))
+                this.cp := Format("{:u}","0x" SubStr(szKey,5))
+            }
             
             (A_Index>=4) ? this.strTable.Push(obj) : this.children.Push(obj)
             curAddr := (curAddr + ((wType&&valLen)?StrPut(obj.value):valLen) + 3) & ~3
@@ -270,12 +321,19 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
             o.wLength := ((6 + StrPut(prop) + 3) & ~3) + StrPut(value)
             o.wValLen := Round(StrPut(value)/2)
         } Else {
-            this.children.Push({wLength:((6 + StrPut(prop) + 3) & ~3) + StrPut(value)
+            this.strTable.Push({wLength:((6 + StrPut(prop) + 3) & ~3) + StrPut(value)
                                ,wValLen:(StrPut(value)/2),wType:1,szKey:prop,value:value})
         }
     }
-    Apply() { ; Read elements and recalc sizes, and then construct output buffer (this.outObj)
-        (strTableSize := 0), (o := this.children), (o[3].szKey := this.lang . this.cp)
+    Apply(name, oldLang, lang:="", cp:="") { ; Read elements and recalc sizes, and then construct output buffer (this.outObj)
+        this.name := name        ; set resource name
+        this.oldLang := oldLang  ; set lang to remove
+        If !(this.lang := lang)  ; set lang data if specified
+            return
+        
+        (cp) ? this.cp := cp : ""
+        lang_cp := Format("{:04X}",this.lang) . Format("{:04X}",this.cp)
+        (strTableSize := 0), (o := this.children), (o[3].szKey := lang_cp)
         For i, obj in this.strTable
             strTableSize += (obj.wLength + 3) & ~3
         
@@ -283,7 +341,7 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
         o[2].wLength := o[3].wLength + 6 + 30       ; Update StringFileInfo size
         o[1].wLength := ((6 + 32 + 3) & ~3) + 52 + o[2].wLength + 68 ; Update VS_VERSION_INFO
         
-        NumPut("UInt", ((("0x" this.cp)<<16) | ("0x" this.lang)), o[5].value) ; Write Translation value
+        NumPut("UInt", (this.cp<<16) | this.lang, o[5].value) ; Write Translation value
         
         outList := []
         Loop 3 ; re-order elements into one array (this.outList)
@@ -326,12 +384,16 @@ class ver { ; thanks to VersionRes.ahk for inspiration (lib from Ahk2Exe)
         If !(hUpdate := (hUpdate)?hUpdate:this.hUpdate)
             return false
         
-        If !DllCall("UpdateResource", "Ptr", hUpdate, "Ptr", 16, "Ptr", this.name ; delete old lang resource
-                                    , "UShort", ("0x" this.oldLang), "UPtr", 0, "UInt", 0)
-            return false
-            
-        return DllCall("UpdateResource", "Ptr", hUpdate, "Ptr", 16, "Ptr", this.name ; write new resource
-                                       , "UShort", ("0x" this.lang), "Ptr", this.outObj.ptr, "UInt", this.outObj.size)
+        If (this.oldLang) {
+            If !(result := DllCall("UpdateResource", "Ptr", hUpdate, "Ptr", 16, "Ptr", this.name ; delete old lang resource
+                                                   , "UShort", this.oldLang, "UPtr", 0, "UInt", 0))
+                return false
+        }
+        
+        If (this.lang)
+            result := DllCall("UpdateResource", "Ptr", hUpdate, "Ptr", 16, "Ptr", this.name ; write new resource
+                                              , "UShort", this.lang, "Ptr", this.outObj.ptr, "UInt", this.outObj.size)
+        return result
     }
     EndUpdate(hUpdate:=0) {
         If !(hUpdate := (hUpdate)?hUpdate:this.hUpdate)
